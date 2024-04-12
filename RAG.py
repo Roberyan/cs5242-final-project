@@ -6,9 +6,15 @@ from sentence_transformers import util, SentenceTransformer
 import textwrap
 import matplotlib.pyplot as plt
 import fitz
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers.utils import is_flash_attn_2_available 
+from transformers import BitsAndBytesConfig
+quantization_config = BitsAndBytesConfig(load_in_4bit=True,bnb_4bit_compute_dtype=torch.float16)
 
 RETRIEVAL_CANDIDATES_NUM = 5
 EMBEDDING_MODEL = "all-mpnet-base-v2"
+
+MODEL_ID = "google/gemma-2b"
 
 def print_wrapped(text, wrap_length=80):
     wrapped_text = textwrap.fill(text, wrap_length)
@@ -26,12 +32,15 @@ def getAimFileWithEmbedding(file_path):
     embeddings = torch.tensor(np.array(text_chunks_and_embedding_df["embedding"].tolist()), dtype=torch.float32).to(device)
     return pages_and_chunks, embeddings
 
-def getAnswer(query, model, embeddings):
+def getAnswer(query, model, embeddings, sim_metric="cosine"):
     query_embedding = model.encode(query, convert_to_tensor=True)
-    dot_relations = util.dot_score(a=query_embedding, b=embeddings)[0]
-    top_results = torch.topk(dot_relations, k=RETRIEVAL_CANDIDATES_NUM)
+    if sim_metric == "cosine":
+        sim_relations = util.cos_sim(a=query_embedding, b=embeddings)[0]
+    elif sim_metric == "dot":
+        sim_relations = util.dot_score(a=query_embedding, b=embeddings)[0]
+    scores, indices = torch.topk(sim_relations, k=RETRIEVAL_CANDIDATES_NUM)
 
-    return top_results
+    return scores, indices
 
 def getPageImg(file_path, page_num):
     doc = fitz.open(file_path)
@@ -49,6 +58,13 @@ def showAnswerPageForQuery(query, answer_page):
     plt.axis('off') # Turn off axis
     plt.show()
 
+def showGPU():
+    gpu_memory_bytes = torch.cuda.get_device_properties(0).total_memory
+    gpu_memory_gb = round(gpu_memory_bytes / (2**30))
+    print(f"Available GPU memory: {gpu_memory_gb} GB")
+
+
+
 if __name__ == "__main__":
 
     pdf_path = "./hengda_report/intrep.pdf"
@@ -61,13 +77,13 @@ if __name__ == "__main__":
     query = "BORROWINGS of Hengda in 2023"
 
     # Get the top-k results 
-    top_results_dot_product = getAnswer(query,model=embedding_model,embeddings=embeddings)
+    scores, indices = getAnswer(query,model=embedding_model,embeddings=embeddings)
     # print(top_results_dot_product)
 
     print(f"Query: '{query}'\n")
     print("Results:")
     # Loop through zipped together scores and indicies from torch.topk
-    for score, idx in zip(top_results_dot_product[0], top_results_dot_product[1]):
+    for score, idx in zip(scores, indices):
         print(f"Score: {score:.4f}")
         # Print relevant sentence chunk (since the scores are in descending order, the most relevant chunk will be first)
         print("Text:")
