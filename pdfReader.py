@@ -7,6 +7,8 @@ import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
 from spacy.lang.en import English
+import numpy as np
+import matplotlib.pyplot as plt
 
 nlp = English()
 nlp.add_pipe("sentencizer")
@@ -113,6 +115,8 @@ class pdfReader:
             pages_and_chunks_with_embeddings.to_csv(save_path, index=False)
         
         return pages_and_chunks_with_embeddings
+    
+
         
 if __name__ == "__main__":
     

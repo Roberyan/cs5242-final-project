@@ -3,8 +3,12 @@ import torch
 import numpy as np 
 import pandas as pd
 from sentence_transformers import util, SentenceTransformer
-# Define helper function to print wrapped text 
 import textwrap
+import matplotlib.pyplot as plt
+import fitz
+
+RETRIEVAL_CANDIDATES_NUM = 5
+EMBEDDING_MODEL = "all-mpnet-base-v2"
 
 def print_wrapped(text, wrap_length=80):
     wrapped_text = textwrap.fill(text, wrap_length)
@@ -15,49 +19,51 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def getArrayFromString(array_str):
     return np.array(array_str.strip("[]").split(", "), dtype=float)
 
-if __name__ == "__main__":
-    aim_file_with_embedding = "./hengda_report/pages_and_chunks_with_embeddings.csv" 
-    text_chunks_and_embedding_df = pd.read_csv(aim_file_with_embedding)
-    
+def getAimFileWithEmbedding(file_path):
+    text_chunks_and_embedding_df = pd.read_csv(file_path)
     text_chunks_and_embedding_df["embedding"] = text_chunks_and_embedding_df["embedding"].apply(getArrayFromString)
-    
     pages_and_chunks = text_chunks_and_embedding_df.to_dict(orient="records")
-    
     embeddings = torch.tensor(np.array(text_chunks_and_embedding_df["embedding"].tolist()), dtype=torch.float32).to(device)
+    return pages_and_chunks, embeddings
+
+def getAnswer(query, model, embeddings):
+    query_embedding = model.encode(query, convert_to_tensor=True)
+    dot_relations = util.dot_score(a=query_embedding, b=embeddings)[0]
+    top_results = torch.topk(dot_relations, k=RETRIEVAL_CANDIDATES_NUM)
+
+    return top_results
+
+def getPageImg(file_path, page_num):
+    doc = fitz.open(file_path)
+    page = doc.load_page(page_num)
+    img = page.get_pixmap(dpi=300)
+    doc.close()
+    img_array = np.frombuffer(img.samples_mv, dtype=np.uint8).reshape((img.h, img.w, img.n))
+
+    return img_array
+
+def showAnswerPageForQuery(query, answer_page):
+    plt.figure(figsize=(13, 10))
+    plt.imshow(answer_page)
+    plt.title(f"Query: '{query}' | Most relevant page:")
+    plt.axis('off') # Turn off axis
+    plt.show()
+
+if __name__ == "__main__":
+
+    pdf_path = "./hengda_report/intrep.pdf"
     
-    embedding_model = SentenceTransformer(model_name_or_path="all-mpnet-base-v2", device=device) # choose the device to load the model to
+    pages_and_chunks, embeddings = getAimFileWithEmbedding(file_path="./hengda_report/pages_and_chunks_with_embeddings.csv" )
     
-    # 1. Define the query
-    # Note: This could be anything. But since we're working with a nutrition textbook, we'll stick with nutrition-based queries.
+    embedding_model = SentenceTransformer(model_name_or_path=EMBEDDING_MODEL, device=device) # choose the device to load the model to
+    
+
     query = "BORROWINGS of Hengda in 2023"
-    print(f"Query: {query}")
 
-    # 2. Embed the query to the same numerical space as the text examples 
-    # Note: It's important to embed your query with the same model you embedded your examples with.
-    query_embedding = embedding_model.encode(query, convert_to_tensor=True)
+    # Get the top-k results 
+    top_results_dot_product = getAnswer(query,model=embedding_model,embeddings=embeddings)
+    # print(top_results_dot_product)
 
-    # 3. Get similarity scores with the dot product (we'll time this for fun)
-    from time import perf_counter as timer
-
-    start_time = timer()
-    dot_scores = util.dot_score(a=query_embedding, b=embeddings)[0]
-    end_time = timer()
-
-    print(f"Time take to get scores on {len(embeddings)} embeddings: {end_time-start_time:.5f} seconds.")
-
-    # 4. Get the top-k results (we'll keep this to 5)
-    top_results_dot_product = torch.topk(dot_scores, k=5)
-    print(top_results_dot_product)
-    larger_embeddings = torch.randn(100*embeddings.shape[0], 768).to(device)
-    print(f"Embeddings shape: {larger_embeddings.shape}")
-
-    # Perform dot product across 168,000 embeddings
-    start_time = timer()
-    dot_scores = util.dot_score(a=query_embedding, b=larger_embeddings)[0]
-    end_time = timer()
-
-    print(f"Time take to get scores on {len(larger_embeddings)} embeddings: {end_time-start_time:.5f} seconds.")
-    
     print(f"Query: '{query}'\n")
     print("Results:")
     # Loop through zipped together scores and indicies from torch.topk
@@ -69,3 +75,9 @@ if __name__ == "__main__":
         # Print the page number too so we can reference the textbook further (and check the results)
         print(f"Page number: {pages_and_chunks[idx]['page_number']}")
         print("\n")
+    
+    img_array = getPageImg(pdf_path, 50)
+    
+    showAnswerPageForQuery(query, img_array)
+    
+    
