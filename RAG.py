@@ -84,7 +84,7 @@ if __name__ == "__main__":
     embedding_model = SentenceTransformer(model_name_or_path=EMBEDDING_MODEL,
                                           device=device)  # choose the device to load the model to
 
-    query = "BORROWINGS of Hengda in 2023"
+    query = "How to determine whether a person has depression?"
 
     # Get the top-k results 
     scores, indices = getAnswer(query, model=embedding_model, embeddings=embeddings)
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     # let's explore LLM
     # TODO 增加更多的询问例句
-    questions = ["How is the performance of Hengda in 2023?"]
+    questions = ["What is depression?"]
     input_text = random.choice(questions)
     query = input_text
     print(f"Input text:\n{input_text}")
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     prompt_withoutRAG = prompt_formatter_withoutRAG(query=query,
                               tokenizer=tokenizer)
     input_ids = tokenizer(prompt, return_tensors="pt").to("cuda")
-    input_ids_withoutRAG = tokenizer(prompt, return_tensors="pt").to("cuda")
+    input_ids_withoutRAG = tokenizer(prompt_withoutRAG, return_tensors="pt").to("cuda")
     # final
     print("#" * 60)
     # Generate an output of tokens

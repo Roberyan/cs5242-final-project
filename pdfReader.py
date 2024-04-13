@@ -95,7 +95,7 @@ class pdfReader:
         return df[df["chunk_num_tokens"] > self.MIN_TOKEN_LENGTH].to_dict(orient="records")
 
     def encodeChunkText(self, pages_and_chunks, model_name="all-mpnet-base-v2", ifSave=True, save_path = "./hengda_report/pages_and_chunks_with_embeddings.csv"):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
         embedding_model = SentenceTransformer(model_name_or_path=model_name, device=device) 
         
         text_chunks = [item["sentence_chunk"] for item in pages_and_chunks]
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     
     hengdaReader = pdfReader(files_dir=files_dir)
     
-    pages_and_texts = hengdaReader.readPDF("./hengda_report/intrep.pdf")
+    pages_and_texts = hengdaReader.readPDF("./hengda_report/guideline.pdf")
     # print(random.sample(pages_and_texts, k=3))
     # print(hengdaReader.getPdfStatisticDescription(pages_and_texts))
     
