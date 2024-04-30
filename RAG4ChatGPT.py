@@ -2,24 +2,21 @@ import random
 import torch
 import numpy as np
 import pandas as pd
-from sentence_transformers import util, SentenceTransformer
 import textwrap
 import matplotlib.pyplot as plt
-import fitz
+from sentence_transformers import util, SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.utils import is_flash_attn_2_available
 from transformers import BitsAndBytesConfig
 import os
-from pdfReader import pdfReader
+from askGPT import askGPT
 
-os.environ['HF_HOME'] = "/root/autodl-tmp"
+os.environ['HF_HOME'] = "************"
 
 quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
 
 RETRIEVAL_CANDIDATES_NUM = 5
 EMBEDDING_MODEL = "all-mpnet-base-v2"
-
-MODEL_ID = "THUDM/chatglm3-6b"
 
 
 def print_wrapped(text, wrap_length=80):
@@ -54,15 +51,6 @@ def getAnswer(query, model, embeddings, sim_metric="cosine"):
     return scores, indices
 
 
-def getPageImg(file_path, page_num):
-    doc = fitz.open(file_path)
-    page = doc.load_page(page_num)
-    img = page.get_pixmap(dpi=300)
-    doc.close()
-    img_array = np.frombuffer(img.samples_mv, dtype=np.uint8).reshape((img.h, img.w, img.n))
-
-    return img_array
-
 
 def showAnswerPageForQuery(query, answer_page):
     plt.figure(figsize=(13, 10))
@@ -83,7 +71,7 @@ from tqdm import tqdm
 if __name__ == "__main__":
 
     files_dir = "./hengda_report"
-    retriever = pdfReader(files_dir)
+    # retriever = pdfReader(files_dir)
 
     pdf_path = "mamba.pdf"
     pdf_path = os.path.join(files_dir, pdf_path)
@@ -96,16 +84,14 @@ if __name__ == "__main__":
     embedding_model = SentenceTransformer(model_name_or_path=EMBEDDING_MODEL,
                                           device=device)  # choose the device to load the model to
 
+
     showGPU()
     print("*" * 50)
-    from utils import get_llm
-
-    tokenizer, llm_model = get_llm(MODEL_ID, use_quantization_config=False)
-    llm_model.eval()
 
 
+    # let's explore LLM
     questions = []
-    with open("./questions3.txt", "r") as f:
+    with open("./questions.txt", "r", encoding='utf-8') as f:
         for line in f:
             if len(line.strip()) > 5:
                 questions.append(line.strip())
@@ -113,6 +99,7 @@ if __name__ == "__main__":
     for i, question in enumerate(tqdm(questions)):
         input_text = question
         query = input_text
+        # print(f"Input text:\n{input_text}",end="\n\n")
 
         # Create prompt template for instruction-tuned model
         dialogue_template = [
@@ -120,47 +107,17 @@ if __name__ == "__main__":
              "content": input_text}
         ]
 
-        # Apply the chat template
-        prompt = tokenizer.apply_chat_template(conversation=dialogue_template,
-                                               tokenize=False,  # keep as raw text (not tokenized)
-                                               add_generation_prompt=True)
-
-        # Tokenize the input text (turn it into numbers) and send it to GPU
-        input_ids = tokenizer(prompt, return_tensors="pt").to("cuda")
-
-        # Generate outputs passed on the tokenized input
-        outputs = llm_model.generate(**input_ids,
-                                     max_new_tokens=256)  # define the maximum number of new tokens to create
-        outputs_decoded = tokenizer.decode(outputs[0])
 
         from utils import prompt_formatter, prompt_formatter_withoutRAG
 
         scores, indices = getAnswer(query=query, model=embedding_model, embeddings=embeddings, sim_metric="cosine")
         context_items = [pages_and_chunks[i] for i in indices]
         prompt = prompt_formatter(query=query,
-                                  context_items=context_items,
-                                  tokenizer=tokenizer)
-        prompt_withoutRAG = prompt_formatter_withoutRAG(query=query,
-                                                        tokenizer=tokenizer)
-
-        input_ids = tokenizer(prompt, return_tensors="pt").to("cuda")
-        input_ids_withoutRAG = tokenizer(prompt_withoutRAG, return_tensors="pt").to("cuda")
-
-        outputs = llm_model.generate(**input_ids,
-                                     temperature=0.7,
-                                     # lower temperature = more deterministic outputs, higher temperature = more creative outputs
-                                     do_sample=True,
-                                     # whether or not to use sampling, see https://huyenchip.com/2024/01/16/sampling.html for more
-                                     max_new_tokens=256)  # how many new tokens to generate from prompt
-        outputs_withoutRAG = llm_model.generate(**input_ids_withoutRAG,
-                                                temperature=0.7,
-                                                # lower temperature = more deterministic outputs, higher temperature = more creative outputs
-                                                do_sample=True,
-                                                # whether or not to use sampling, see https://huyenchip.com/2024/01/16/sampling.html for more
-                                                max_new_tokens=256)
+                                  context_items=context_items)
+        prompt_withoutRAG = prompt_formatter_withoutRAG(query=query)
         # Turn the output tokens into text
-        output_text = tokenizer.decode(outputs[0])
-        output_withoutRAG = tokenizer.decode(outputs_withoutRAG[0])
+        output_text = askGPT(prompt)
+        output_withoutRAG = askGPT(prompt_withoutRAG)
 
         answer = ""
         # print(f"Query: {query}",end="\n\n")
@@ -171,7 +128,5 @@ if __name__ == "__main__":
         answer = answer + f"Without RAG answer:\n{output_withoutRAG.replace(prompt_withoutRAG, '')}"
         answers.append(answer)
         torch.cuda.empty_cache()
-    with open("{:s}_answers_medicine.txt".format(MODEL_ID.split("/")[-1]), "w", encoding='utf-8') as f:
+    with open("gpt_3.5_answers.txt", "w", encoding='utf-8') as f:
         f.write("\n".join(answers))
-
-
